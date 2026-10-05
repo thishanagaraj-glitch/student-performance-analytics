@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Class Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .chart-tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e2e8f0;
+            flex-wrap: wrap;
+        }
+        .chart-tab {
+            padding: 12px 22px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.88rem;
+            color: #94a3b8;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+            margin-bottom: -2px;
+        }
+        .chart-tab:hover { color: #3b82f6; }
+        .chart-tab.active { color: #2563eb; border-bottom: 3px solid #2563eb; }
+        .chart-canvas-wrap {
+            position: relative;
+            height: 300px;
+            background: white;
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            margin-bottom: 24px;
+        }
+    </style>
+</head>
+<body class="dashboard-bg">
+<div class="container py-5">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold text-dark-blue mb-0">Grade {{ grade }} — Class Performance Dashboard</h2>
+            <p class="text-muted mb-0">
+                {{ overview.total_students }} students &nbsp;·&nbsp;
+                {{ subjects | length }} subjects:
+                <span class="subjects-inline ms-1">
+                    {% for s in subjects %}<span class="subj-tag">{{ s }}</span>{% endfor %}
+                </span>
+                &nbsp;·&nbsp; Class average: <strong>{{ overview.class_avg }}%</strong>
+            </p>
+        </div>
+        <a href="/" class="btn btn-outline-primary shadow-sm">← New Analysis</a>
+    </div>
+
+    <!-- CLASS OVERVIEW -->
+    <div class="section-heading mb-3">
+        <span class="section-badge"><i class="bi bi-bar-chart-fill me-1"></i> Class Overview</span>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3"><div class="kpi-card text-center p-4"><h6 class="text-muted text-uppercase mb-2">Total Students</h6><h2 class="fw-bold text-dark-blue">{{ overview.total_students }}</h2></div></div>
+        <div class="col-6 col-md-3"><div class="kpi-card text-center p-4"><h6 class="text-muted text-uppercase mb-2">Class Average</h6><h2 class="fw-bold text-primary">{{ overview.class_avg }}%</h2></div></div>
+        <div class="col-6 col-md-3"><div class="kpi-card text-center p-4"><h6 class="text-muted text-uppercase mb-2">Top Student</h6><h2 class="fw-bold text-success" style="font-size:1.2rem;">{{ overview.top_student }}</h2></div></div>
+        <div class="col-6 col-md-3"><div class="kpi-card text-center p-4"><h6 class="text-muted text-uppercase mb-2">Passing Students</h6><h2 class="fw-bold text-info">{{ overview.pass_count }}<span class="fs-5 text-muted">/{{ overview.total_students }}</span></h2></div></div>
+    </div>
+
+    <div class="subject-avg-strip mb-4">
+        {% for subj, avg in overview.avg_by_subject.items() %}
+        <div class="subj-avg-card">
+            <span class="subj-name">{{ subj }}</span>
+            <span class="subj-val {% if avg >= 75 %}good{% elif avg >= 40 %}ok{% else %}bad{% endif %}">{{ avg }}</span>
+            <div class="subj-bar-bg">
+                <div class="subj-bar-fill {% if avg >= 75 %}good{% elif avg >= 40 %}ok{% else %}bad{% endif %}" style="width:{{ avg }}%"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Class Chart Tabs -->
+    <div class="chart-tabs" id="class-tabs">
+        <div class="chart-tab active" onclick="switchClassChart('bar', this)">📊 Bar Chart</div>
+        <div class="chart-tab" onclick="switchClassChart('line', this)">📈 Line Chart</div>
+        <div class="chart-tab" onclick="switchClassChart('pie', this)">🥧 Pie Chart</div>
+        <div class="chart-tab" onclick="switchClassChart('doughnut', this)">🍩 Doughnut Chart</div>
+    </div>
+    <div class="chart-canvas-wrap">
+        <canvas id="classChart"></canvas>
+    </div>
+
+    <div class="content-card p-4 mb-5">
+        <h5 class="fw-bold mb-3">Performance Distribution Summary</h5>
+        <div class="d-flex flex-wrap gap-3">
+            {% for perf, count in overview.perf_counts.items() %}{% if count > 0 %}
+            <div class="perf-pill perf-{{ perf | lower | replace(' ','') }}">
+                <span class="perf-label">{{ perf }}</span>
+                <span class="perf-count">{{ count }}</span>
+            </div>
+            {% endif %}{% endfor %}
+        </div>
+    </div>
+
+    <!-- INDIVIDUAL STUDENTS -->
+    <div class="section-heading mb-3">
+        <span class="section-badge"><i class="bi bi-person-fill me-1"></i> Individual Student Analysis</span>
+    </div>
+
+    <div class="student-selector mb-4">
+        <label class="fw-semibold text-dark-blue mb-2 d-block">Select a Student</label>
+        <div class="student-btn-grid">
+            {% for s in students %}
+            <button type="button"
+                    class="student-pill {% if loop.first %}active{% endif %}"
+                    onclick="showStudent({{ loop.index0 }}, this)">
+                {{ s.name }}
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% for s in students %}
+    <div class="student-panel" id="student-{{ loop.index0 }}" {% if not loop.first %}style="display:none;"{% endif %}>
+
+        <div class="student-panel-header mb-3">
+            <h4 class="fw-bold text-dark-blue mb-0"><i class="bi bi-person-circle me-2 text-primary"></i>{{ s.name }}</h4>
+            <span class="text-muted fs-7">{{ subjects | length }} subjects &nbsp;·&nbsp; Total: {{ s.total }}/{{ s.total_possible }}</span>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3"><div class="kpi-card text-center p-3"><h6 class="text-muted text-uppercase mb-1" style="font-size:.72rem;">Total Score</h6><h3 class="fw-bold text-dark-blue mb-0">{{ s.total }}<span class="fs-6 text-muted">/{{ s.total_possible }}</span></h3></div></div>
+            <div class="col-6 col-md-3"><div class="kpi-card text-center p-3"><h6 class="text-muted text-uppercase mb-1" style="font-size:.72rem;">Percentage</h6><h3 class="fw-bold text-primary mb-0">{{ s.percentage }}%</h3></div></div>
+            <div class="col-6 col-md-3"><div class="kpi-card text-center p-3"><h6 class="text-muted text-uppercase mb-1" style="font-size:.72rem;">Verdict</h6><h3 class="fw-bold text-success mb-0" style="font-size:1rem;">{{ s.performance }}</h3></div></div>
+            <div class="col-6 col-md-3"><div class="kpi-card text-center p-3"><h6 class="text-muted text-uppercase mb-1" style="font-size:.72rem;">Top Subject</h6><h3 class="fw-bold text-info mb-0" style="font-size:1rem;">{{ s.strong }}</h3></div></div>
+        </div>
+
+        <!-- Student Chart Tabs -->
+        <div class="chart-tabs" id="tabs-{{ loop.index0 }}">
+            <div class="chart-tab active" onclick="switchStudentChart({{ loop.index0 }}, 'bar', this)">📊 Bar Chart</div>
+            <div class="chart-tab" onclick="switchStudentChart({{ loop.index0 }}, 'line', this)">📈 Line Chart</div>
+            <div class="chart-tab" onclick="switchStudentChart({{ loop.index0 }}, 'pie', this)">🥧 Pie Chart</div>
+            <div class="chart-tab" onclick="switchStudentChart({{ loop.index0 }}, 'doughnut', this)">🍩 Doughnut Chart</div>
+        </div>
+        <div class="chart-canvas-wrap">
+            <canvas id="chart-{{ loop.index0 }}"></canvas>
+        </div>
+
+        <div class="content-card p-4 mb-4">
+            <h5 class="fw-bold mb-3">Subject Status Breakdown</h5>
+            <table class="table table-hover align-middle">
+                <thead class="table-light"><tr><th>Subject</th><th>Marks</th><th>Status (Pass: 40)</th></tr></thead>
+                <tbody>
+                    {% for item in s.status %}
+                    <tr>
+                        <td class="fw-semibold">{{ item.subject }}</td>
+                        <td>{{ item.mark }}</td>
+                        <td>
+                            {% if item.status == 'Pass' %}<span class="badge bg-success-soft text-success px-3 py-2 rounded-pill">Pass</span>
+                            {% else %}<span class="badge bg-danger-soft text-danger px-3 py-2 rounded-pill">Fail</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- AI ASSISTANT -->
+        <div class="ai-assistant-card mb-5">
+            <div class="ai-header">
+                <div class="ai-avatar-wrap">
+                    <div class="ai-avatar"><i class="bi bi-robot"></i></div>
+                    <span class="ai-online-dot"></span>
+                </div>
+                <div class="ai-header-info">
+                    <div class="ai-header-title">AI Learning Assistant</div>
+                    <div class="ai-header-sub">Personalised for <strong>{{ s.name }}</strong></div>
+                </div>
+                <div class="ai-header-badge">Grade {{ grade }}</div>
+            </div>
+            <div class="ai-chat-window" id="chat-{{ loop.index0 }}"></div>
+            <div class="ai-chips" id="chips-{{ loop.index0 }}">
+                <span class="ai-chip" onclick="sendChip({{ loop.index0 }}, this)">📚 Study tips for weak subjects</span>
+                <span class="ai-chip" onclick="sendChip({{ loop.index0 }}, this)">📅 Make me a study schedule</span>
+                <span class="ai-chip" onclick="sendChip({{ loop.index0 }}, this)">💡 How to improve my score?</span>
+                <span class="ai-chip" onclick="sendChip({{ loop.index0 }}, this)">🎯 What topics should I focus on?</span>
+            </div>
+            <div class="ai-input-row">
+                <input type="text" class="ai-input" id="ai-input-{{ loop.index0 }}"
+                       placeholder="Ask me anything about your studies, {{ s.name }}..."
+                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage({{ loop.index0 }});}">
+                <button class="ai-send-btn" onclick="sendMessage({{ loop.index0 }})"><i class="bi bi-send-fill"></i></button>
+            </div>
+        </div>
+
+    </div>
+    {% endfor %}
+
+</div>
+
+<script>
+const STUDENTS = {{ students | tojson }};
+const SUBJECTS = {{ subjects | tojson }};
+const GRADE    = {{ grade }};
+const chatHistories = {};
+
+const COLORS = [
+    'rgba(30,58,138,0.8)','rgba(29,78,216,0.8)','rgba(37,99,235,0.8)',
+    'rgba(59,130,246,0.8)','rgba(96,165,250,0.8)','rgba(147,197,253,0.8)',
+    'rgba(15,23,42,0.8)','rgba(30,64,175,0.8)','rgba(3,105,161,0.8)',
+    'rgba(2,132,199,0.8)','rgba(14,165,233,0.8)','rgba(56,189,248,0.8)'
+];
+const BORDER = COLORS.map(c => c.replace('0.8','1'));
+
+// ── Class chart ──────────────────────────────────────────────────────────
+const classAvgs = {{ overview.avg_by_subject.values() | list | tojson }};
+const classSubjects = {{ overview.avg_by_subject.keys() | list | tojson }};
+const studentNames = {{ students | map(attribute='name') | list | tojson }};
+const studentTotals = {{ students | map(attribute='total') | list | tojson }};
+
+let classChart;
+
+function buildClassChart(type) {
+    const ctx = document.getElementById('classChart').getContext('2d');
+    if (classChart) classChart.destroy();
+    const isPolar = type === 'pie' || type === 'doughnut';
+    const useStudents = type === 'line';
+
+    classChart = new Chart(ctx, {
+        type: type,
+        data: {
+            labels: useStudents ? studentNames : classSubjects,
+            datasets: [{
+                label: useStudents ? 'Total Score' : 'Class Average',
+                data: useStudents ? studentTotals : classAvgs,
+                backgroundColor: COLORS.slice(0, (useStudents ? studentNames : classSubjects).length),
+                borderColor: BORDER.slice(0, (useStudents ? studentNames : classSubjects).length),
+                borderWidth: 2,
+                fill: type === 'line' ? true : undefined,
+                tension: type === 'line' ? 0.4 : undefined,
+                pointRadius: type === 'line' ? 5 : undefined,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: isPolar, position: 'right' } },
+            scales: isPolar ? {} : {
+                y: { beginAtZero: true, max: type === 'line' ? undefined : 100, grid: { color: 'rgba(0,0,0,0.05)' } },
+                x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 45 } }
+            }
+        }
+    });
+}
+
+function switchClassChart(type, tab) {
+    document.querySelectorAll('#class-tabs .chart-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    buildClassChart(type);
+}
+
+// ── Student charts ───────────────────────────────────────────────────────
+const studentCharts = {};
+
+function buildStudentChart(idx, type) {
+    const ctx = document.getElementById('chart-' + idx).getContext('2d');
+    if (studentCharts[idx]) studentCharts[idx].destroy();
+    const s = STUDENTS[idx];
+    const marks = s.status.map(x => x.mark);
+    const labels = s.status.map(x => x.subject);
+    const isPolar = type === 'pie' || type === 'doughnut';
+
+    studentCharts[idx] = new Chart(ctx, {
+        type: type,
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Marks',
+                data: marks,
+                backgroundColor: COLORS.slice(0, labels.length),
+                borderColor: BORDER.slice(0, labels.length),
+                borderWidth: 2,
+                fill: type === 'line' ? true : undefined,
+                tension: type === 'line' ? 0.4 : undefined,
+                pointRadius: type === 'line' ? 6 : undefined,
+                pointHoverRadius: type === 'line' ? 8 : undefined,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: isPolar, position: 'right' } },
+            scales: isPolar ? {} : {
+                y: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.05)' } },
+                x: { grid: { display: false }, ticks: { font: { size: 12, weight: '600' } } }
+            }
+        }
+    });
+}
+
+function switchStudentChart(idx, type, tab) {
+    document.querySelectorAll('#tabs-' + idx + ' .chart-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    buildStudentChart(idx, type);
+}
+
+// ── Show/hide student panel ──────────────────────────────────────────────
+function showStudent(idx, btn) {
+    document.querySelectorAll('.student-panel').forEach((p, i) => p.style.display = i === idx ? '' : 'none');
+    document.querySelectorAll('.student-pill').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('student-' + idx).scrollIntoView({ behavior:'smooth', block:'start' });
+    if (!studentCharts[idx]) buildStudentChart(idx, 'bar');
+    loadInitialMessage(idx);
+}
+
+// ── AI Chat ──────────────────────────────────────────────────────────────
+function buildSystem(student) {
+    const allScores = student.status.map(s => `${s.subject}: ${s.mark}/100 (${s.status})`).join(', ');
+    const weakList  = student.status.filter(s => s.mark < 60).map(s => s.subject);
+    const failList  = student.status.filter(s => s.status === 'Fail').map(s => s.subject);
+    const firstName = student.name.split(' ')[0];
+    return `You are a warm, encouraging AI learning assistant for a Grade ${GRADE} student named ${student.name} (call them ${firstName}).
+Student Profile:
+- Total: ${student.total}/${student.total_possible} (${student.percentage}%) | Performance: ${student.performance}
+- Best: ${student.strong} (${student.marks[student.strong]}/100) | Weakest: ${student.weak} (${student.marks[student.weak]}/100)
+- All Scores: ${allScores}
+- Below 60: ${weakList.length ? weakList.join(', ') : 'None'}
+- Failed: ${failList.length ? failList.join(', ') : 'None'}
+Instructions: Address by first name. Be warm and motivating. Give SPECIFIC topic names for weak subjects. Keep responses 4-8 lines. End by offering further help.`;
+}
+
+function buildInitialPrompt(student) {
+    const firstName  = student.name.split(' ')[0];
+    const weakSubs   = student.status.filter(s => s.mark < 60);
+    const weakDetail = weakSubs.map(s => `${s.subject} (${s.mark}/100)`).join(', ') || 'None — great job!';
+    const failSubs   = student.status.filter(s => s.status === 'Fail').map(s => s.subject).join(', ') || 'None';
+    return `Write a warm, personalized academic feedback message for ${firstName}.
+Structure EXACTLY like this:
+1. Friendly greeting using their name.
+2. Overall score (${student.total}/${student.total_possible} = ${student.percentage}%) with encouragement.
+3. Praise best subject: ${student.strong} (${student.marks[student.strong]}/100).
+4. "${firstName}, I noticed you scored lower in: ${weakDetail}"
+5. For EACH weak subject (below 60), list 2-3 specific topics:
+   📘 [Subject]: Topic 1, Topic 2, Topic 3
+6. Extra encouragement if failed (${failSubs}).
+7. End: "Feel free to ask me any questions — I'm here to help you improve! 😊"`;
+}
+
+function appendBubble(chatWindow, role, text, isTyping = false) {
+    const wrap = document.createElement('div');
+    wrap.className = `chat-msg ${role === 'user' ? 'user-msg' : 'ai-msg'}`;
+    const bubble = document.createElement('div');
+    bubble.className = `chat-bubble ${role === 'user' ? 'user-bubble' : 'ai-bubble'}`;
+    if (isTyping) {
+        bubble.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+        wrap.id = 'typing-bubble';
+    } else {
+        bubble.innerHTML = text.replace(/\n/g, '<br>');
+    }
+    wrap.appendChild(bubble);
+    chatWindow.appendChild(wrap);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+    return wrap;
+}
+
+async function callAI(idx, messages) {
+    const response = await fetch('/ai_chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system: buildSystem(STUDENTS[idx]), messages })
+    });
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    return data.reply;
+}
+
+async function loadInitialMessage(idx) {
+    const chatWindow = document.getElementById('chat-' + idx);
+    if (!chatWindow || chatHistories[idx]) return;
+    chatHistories[idx] = [];
+    const typingWrap = appendBubble(chatWindow, 'ai', '', true);
+    try {
+        const reply = await callAI(idx, [{ role: 'user', content: buildInitialPrompt(STUDENTS[idx]) }]);
+        typingWrap.remove();
+        appendBubble(chatWindow, 'ai', reply);
+        chatHistories[idx].push({ role: 'assistant', content: reply });
+    } catch (err) {
+        typingWrap.remove();
+        appendBubble(chatWindow, 'ai', '⚠️ Could not connect to AI assistant. Please check your API key in app.py.');
+    }
+}
+
+async function sendMessage(idx) {
+    const input      = document.getElementById('ai-input-' + idx);
+    const chatWindow = document.getElementById('chat-' + idx);
+    const chips      = document.getElementById('chips-' + idx);
+    const text       = input.value.trim();
+    if (!text) return;
+    if (chips) chips.style.display = 'none';
+    input.value = ''; input.disabled = true;
+    appendBubble(chatWindow, 'user', text);
+    if (!chatHistories[idx]) chatHistories[idx] = [];
+    chatHistories[idx].push({ role: 'user', content: text });
+    const typingWrap = appendBubble(chatWindow, 'ai', '', true);
+    try {
+        const reply = await callAI(idx, chatHistories[idx]);
+        typingWrap.remove();
+        appendBubble(chatWindow, 'ai', reply);
+        chatHistories[idx].push({ role: 'assistant', content: reply });
+    } catch (err) {
+        typingWrap.remove();
+        appendBubble(chatWindow, 'ai', '⚠️ Error: ' + err.message);
+    }
+    input.disabled = false; input.focus();
+}
+
+function sendChip(idx, chipEl) {
+    const input = document.getElementById('ai-input-' + idx);
+    input.value = chipEl.textContent.replace(/^[^\w]+/, '').trim();
+    sendMessage(idx);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    buildClassChart('bar');
+    buildStudentChart(0, 'bar');
+    loadInitialMessage(0);
+});
+</script>
+</body>
+</html>
